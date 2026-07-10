@@ -25,18 +25,24 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("Volatility Lab")
-st.caption("A module for studying implied volatility, realized volatility, skew, term structure, and volatility surfaces.")
+st.title("SPX / VIX Volatility Lab")
+st.caption(
+    "A real-market volatility workstation for SPX realized volatility, "
+    "VIX-implied volatility, volatility risk premium, and index-volatility regime analysis."
+)
 
 st.markdown(
     """
-    The Volatility Lab will explore how volatility is observed, priced, and interpreted
-    in institutional markets.
+    The Volatility Lab studies the relationship between **SPX index movement**
+    and **VIX-implied volatility**.
 
-    This module is intentionally starting with clear explanations before advanced analytics.
-    The first goal is to build intuition around what volatility means, why implied volatility
-    differs from realized volatility, and how traders think about volatility across strikes
-    and expirations.
+    The core objective is to understand what volatility regime SPX is currently
+    realizing, what VIX is implying about forward index volatility, and whether
+    the market is pricing calm, protection demand, event risk, or stress.
+
+    This page focuses on market-level volatility regime analysis. Detailed SPX
+    option-chain structure, skew, term structure, and volatility-surface analytics
+    will live in the SPX Options Lab.
     """
 )
 
@@ -49,24 +55,25 @@ with left_col:
 
     st.markdown(
         """
-        This module will be built around several core questions:
+        This module is built around several institutional volatility questions:
 
-        1. What is realized volatility?
-        2. What is implied volatility?
-        3. Why does implied volatility usually differ from realized volatility?
-        4. What does the volatility term structure tell us?
-        5. What is skew, and why does it matter in index options?
-        6. How does a volatility surface summarize market pricing across strikes and expirations?
+        1. What volatility regime is SPX currently realizing?
+        2. Is SPX realized volatility accelerating or calming down across short- and medium-term windows?
+        3. How do 5-day, 10-day, 20-day, and 60-day SPX realized volatility compare?
+        4. What is VIX implying about forward SPX volatility?
+        5. Is VIX elevated or depressed relative to recent SPX realized volatility?
+        6. Is the realized/implied spread widening or narrowing?
+        7. Is the market pricing calm, protection demand, event risk, or stress?
+        8. What is the desk-level interpretation of the current SPX/VIX volatility setup?
         """
     )
 
 with right_col:
-    st.subheader("Build Status")
-
     st.info("Module shell created")
-    st.warning("Analytics not yet implemented")
-    st.warning("Charts not yet implemented")
-    st.warning("Data inputs not yet connected")
+    st.info("Realized volatility function implemented")
+    st.warning("Real SPX/VIX data not yet connected")
+    st.warning("Implied-vs-realized analytics not yet implemented")
+    st.warning("Desk interpretation layer not yet implemented")
 
 st.divider()
 
@@ -106,7 +113,7 @@ with concept_cols[2]:
 
 st.divider()
 
-st.subheader("Realized Volatility Demo")
+st.subheader("Temporary Mechanics Demo")
 
 st.markdown(
     """
