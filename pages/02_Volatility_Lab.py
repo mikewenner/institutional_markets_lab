@@ -71,11 +71,14 @@ with left_col:
     )
 
 with right_col:
-    st.info("Module shell created")
-    st.info("Realized volatility function implemented")
-    st.warning("Real SPX/VIX data not yet connected")
-    st.warning("Implied-vs-realized analytics not yet implemented")
-    st.warning("Desk interpretation layer not yet implemented")
+    st.subheader("Build Status")
+
+    st.success("Module shell created")
+    st.success("Realized volatility function implemented")
+    st.success("Real SPX / VIX / VVIX data connected")
+    st.info("Implied-vs-realized analytics in progress")
+    st.info("Desk interpretation layer in progress")
+    st.warning("Volatility surface analytics live in SPX Options Lab")
 
 st.divider()
 
@@ -729,6 +732,95 @@ try:
         movement.
         """
     )
+
+    st.markdown("#### VVIX / Vol-of-Vol Stress")
+
+    vvix_series = market_data["vvix_close"].dropna()
+
+    vvix_current = vvix_series.iloc[-1]
+    vvix_percentile = (vvix_series <= vvix_current).mean()
+
+    vvix_fig = go.Figure()
+
+    vvix_fig.add_trace(
+        go.Scatter(
+            x=vvix_series.index,
+            y=vvix_series,
+            mode="lines",
+            name="VVIX",
+            line=dict(color="#af7ac5", width=2.3),
+            hovertemplate="Date: %{x}<br>VVIX: %{y:.2f}<extra></extra>",
+        )
+    )
+
+    vvix_fig.update_layout(
+        title=dict(
+            text="VVIX Volatility-of-Volatility Index",
+            x=0.01,
+            xanchor="left",
+            font=dict(size=18, color="#f5f5f5"),
+        ),
+        template="plotly_dark",
+        height=360,
+        margin=dict(l=40, r=40, t=55, b=40),
+        paper_bgcolor="#111111",
+        plot_bgcolor="#111111",
+        xaxis=dict(
+            title="Date",
+            gridcolor="rgba(180, 180, 180, 0.18)",
+            zeroline=False,
+        ),
+        yaxis=dict(
+            title="VVIX Level",
+            gridcolor="rgba(180, 180, 180, 0.18)",
+            zeroline=False,
+        ),
+        hovermode="x unified",
+        showlegend=False,
+    )
+
+    st.plotly_chart(vvix_fig, use_container_width=True)
+
+    vvix_cols = st.columns(2)
+
+    with vvix_cols[0]:
+        st.metric("Current VVIX", f"{vvix_current:.2f}")
+
+    with vvix_cols[1]:
+        st.metric(
+            "VVIX Percentile",
+            f"{vvix_percentile:.0%}",
+            help="Percentile rank of the latest VVIX level versus the loaded history.",
+        )
+
+    with st.expander("Desk so what: VVIX / vol-of-vol stress"):
+        st.markdown(
+            f"""
+            **VVIX** is a market measure of implied volatility on VIX options. In
+            practical terms, it helps frame how much uncertainty the market is pricing
+            around volatility itself.
+
+            **Current read:**
+
+            - Current VVIX: **{vvix_current:.2f}**
+            - Percentile versus loaded history: **{vvix_percentile:.0%}**
+
+            **Desk interpretation:**
+
+            VIX tells us what the market is implying about forward SPX volatility.
+            VVIX tells us how unstable or uncertain the volatility market itself may be.
+
+            For a VIX/options flow desk, elevated VVIX can matter because it may point
+            to higher demand for convexity, greater uncertainty around the VIX path,
+            and more expensive optionality on volatility itself.
+
+            If VIX is high and VVIX is also elevated, the market may be pricing not
+            only higher index volatility, but also uncertainty around volatility outcomes.
+
+            If VIX is elevated but VVIX is contained, the market may be pricing higher
+            SPX volatility without the same degree of stress in vol-of-vol.
+            """
+        )
 
     subtle_divider()
 

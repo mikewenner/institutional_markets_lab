@@ -6,6 +6,30 @@ The project is designed as both a learning platform and a professional portfolio
 
 ---
 
+# Application Preview
+
+## Home Dashboard
+
+![Home Dashboard](assets/screenshots/home_dashboard.png)
+
+---
+
+## Volatility Lab
+
+### Market Overview
+
+![Volatility Lab 1](assets/screenshots/vol_lab1.png)
+
+### Market Analytics
+
+![Volatility Lab 2](assets/screenshots/vol_lab2.png)
+
+### Desk View & Interpretation
+
+![Volatility Lab 3](assets/screenshots/vol_lab3.png)
+
+---
+
 ## Why This Project Exists
 
 I currently work in financial services analytics, using Python, SQL, and data visualization to analyze large-scale customer, deposits, payments, spend, liquidity, and transaction datasets. Over time, my strongest professional interest has moved toward markets: derivatives, volatility, index flow, market structure, execution, financing, and risk.
