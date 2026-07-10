@@ -740,12 +740,78 @@ try:
     vvix_current = vvix_series.iloc[-1]
     vvix_percentile = (vvix_series <= vvix_current).mean()
 
+    vvix_20d_average = vvix_series.rolling(window=20).mean().iloc[-1]
+    vvix_60d_average = vvix_series.rolling(window=60).mean().iloc[-1]
+
+    vvix_5d_change = vvix_current - vvix_series.iloc[-6]
+    vvix_20d_change = vvix_current - vvix_series.iloc[-21]
+
+    vix_current = latest_row["vix_close"]
+    vix_percentile = (market_data["vix_close"].dropna() <= vix_current).mean()
+
+    if vvix_percentile >= 0.80:
+        vvix_regime_label = "Elevated vol-of-vol"
+        vvix_regime_color = "rgba(120, 35, 35, 0.45)"
+        vvix_regime_read = (
+            "VVIX is high versus its recent history, suggesting the market is pricing "
+            "greater uncertainty around volatility outcomes."
+        )
+
+    elif vvix_percentile >= 0.60:
+        vvix_regime_label = "Firm vol-of-vol"
+        vvix_regime_color = "rgba(140, 90, 25, 0.42)"
+        vvix_regime_read = (
+            "VVIX is moderately firm versus its recent history, suggesting some demand "
+            "for volatility convexity or uncertainty around the VIX path."
+        )
+
+    else:
+        vvix_regime_label = "Contained vol-of-vol"
+        vvix_regime_color = "rgba(45, 90, 65, 0.42)"
+        vvix_regime_read = (
+            "VVIX is contained versus its recent history, suggesting volatility-of-volatility "
+            "is not showing acute stress."
+        )
+
+
+    if vix_percentile >= 0.70 and vvix_percentile >= 0.70:
+        vix_vvix_read = (
+            "Both VIX and VVIX are elevated versus recent history. This points to a more "
+            "stressed volatility environment where the market is pricing higher SPX volatility "
+            "and greater uncertainty around volatility itself."
+        )
+
+    elif vix_percentile >= 0.70 and vvix_percentile < 0.70:
+        vix_vvix_read = (
+            "VIX is elevated, but VVIX is not equally stressed. The market may be pricing "
+            "higher SPX volatility without a major increase in vol-of-vol stress."
+        )
+
+    elif vix_percentile < 0.70 and vvix_percentile >= 0.70:
+        vix_vvix_read = (
+            "VVIX is elevated while VIX is less stressed. This may suggest demand for convexity "
+            "or uncertainty around future volatility outcomes even if spot VIX is not extreme."
+        )
+
+    else:
+        vix_vvix_read = (
+            "Both VIX and VVIX are relatively contained versus recent history. The volatility "
+            "market does not appear to be pricing acute index-volatility stress or vol-of-vol stress."
+        )
+
+    vvix_chart_data = pd.DataFrame(
+        {
+            "VVIX": market_data["vvix_close"],
+            "SPX": market_data["spx_close"],
+        }
+    ).dropna()
+
     vvix_fig = go.Figure()
 
     vvix_fig.add_trace(
         go.Scatter(
-            x=vvix_series.index,
-            y=vvix_series,
+            x=vvix_chart_data.index,
+            y=vvix_chart_data["VVIX"],
             mode="lines",
             name="VVIX",
             line=dict(color="#af7ac5", width=2.3),
@@ -753,16 +819,28 @@ try:
         )
     )
 
+    vvix_fig.add_trace(
+        go.Scatter(
+            x=vvix_chart_data.index,
+            y=vvix_chart_data["SPX"],
+            mode="lines",
+            name="SPX Index Level",
+            yaxis="y2",
+            line=dict(color="rgba(220, 220, 220, 0.16)", width=1.0),
+            hovertemplate="Date: %{x}<br>SPX: %{y:,.2f}<extra></extra>",
+        )
+    )
+
     vvix_fig.update_layout(
         title=dict(
-            text="VVIX Volatility-of-Volatility Index",
+            text="VVIX Vol-of-Vol Stress with SPX Context",
             x=0.01,
             xanchor="left",
             font=dict(size=18, color="#f5f5f5"),
         ),
         template="plotly_dark",
         height=360,
-        margin=dict(l=40, r=40, t=55, b=40),
+        margin=dict(l=40, r=55, t=55, b=40),
         paper_bgcolor="#111111",
         plot_bgcolor="#111111",
         xaxis=dict(
@@ -775,13 +853,21 @@ try:
             gridcolor="rgba(180, 180, 180, 0.18)",
             zeroline=False,
         ),
+        yaxis2=dict(
+            title="SPX",
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            zeroline=False,
+            color="rgba(220, 220, 220, 0.45)",
+        ),
         hovermode="x unified",
         showlegend=False,
     )
 
     st.plotly_chart(vvix_fig, use_container_width=True)
 
-    vvix_cols = st.columns(2)
+    vvix_cols = st.columns(4)
 
     with vvix_cols[0]:
         st.metric("Current VVIX", f"{vvix_current:.2f}")
@@ -793,32 +879,82 @@ try:
             help="Percentile rank of the latest VVIX level versus the loaded history.",
         )
 
+    with vvix_cols[2]:
+        st.metric(
+            "VVIX 5d Change",
+            f"{vvix_5d_change:+.2f} pts",
+        )
+
+    with vvix_cols[3]:
+        st.metric(
+            "VVIX 20d Change",
+            f"{vvix_20d_change:+.2f} pts",
+        )
+
+    st.markdown(
+        f"""
+        <div style="
+            background: {vvix_regime_color};
+            border: 1px solid rgba(220, 220, 220, 0.18);
+            border-radius: 12px;
+            padding: 1rem 1.1rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.75rem;
+        ">
+            <div style="font-size: 0.90rem; color: #cfcfcf; margin-bottom: 0.35rem;">
+                VVIX Regime
+            </div>
+            <div style="font-size: 1.05rem; font-weight: 700; margin-bottom: 0.60rem;">
+                {vvix_regime_label}
+            </div>
+            <div style="font-size: 0.92rem; line-height: 1.55; color: #eeeeee;">
+                {vvix_regime_read}<br><br>
+                <strong>VIX / VVIX read:</strong> {vix_vvix_read}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     with st.expander("Desk so what: VVIX / vol-of-vol stress"):
         st.markdown(
             f"""
-            **VVIX** is a market measure of implied volatility on VIX options. In
-            practical terms, it helps frame how much uncertainty the market is pricing
-            around volatility itself.
+            **VVIX** measures implied volatility on VIX options. It is often described
+            as volatility-of-volatility.
+
+            In desk terms, VIX gives a read on the market price of forward SPX
+            volatility. VVIX gives a read on how uncertain the market is about the
+            volatility path itself.
 
             **Current read:**
 
             - Current VVIX: **{vvix_current:.2f}**
-            - Percentile versus loaded history: **{vvix_percentile:.0%}**
+            - VVIX percentile versus loaded history: **{vvix_percentile:.0%}**
+            - VVIX 20d average: **{vvix_20d_average:.2f}**
+            - VVIX 60d average: **{vvix_60d_average:.2f}**
+            - VVIX 5d change: **{vvix_5d_change:+.2f} pts**
+            - VVIX 20d change: **{vvix_20d_change:+.2f} pts**
 
-            **Desk interpretation:**
+            **Why this matters to a VIX/options flow desk:**
 
-            VIX tells us what the market is implying about forward SPX volatility.
-            VVIX tells us how unstable or uncertain the volatility market itself may be.
+            A VIX options trader is not only watching the level of VIX. They also care
+            about the market's demand for optionality on volatility itself.
 
-            For a VIX/options flow desk, elevated VVIX can matter because it may point
-            to higher demand for convexity, greater uncertainty around the VIX path,
-            and more expensive optionality on volatility itself.
+            Elevated or rising VVIX can suggest stronger demand for convexity, greater
+            uncertainty around the VIX path, or more stress in volatility products.
+            That can matter for pricing, risk limits, hedging, and how a desk thinks
+            about flow in VIX options.
 
-            If VIX is high and VVIX is also elevated, the market may be pricing not
-            only higher index volatility, but also uncertainty around volatility outcomes.
+            **Possible reads:**
 
-            If VIX is elevated but VVIX is contained, the market may be pricing higher
-            SPX volatility without the same degree of stress in vol-of-vol.
+            - **VIX up, VVIX up:** market is pricing higher SPX volatility and more
+            uncertainty around volatility outcomes.
+            - **VIX up, VVIX contained:** implied SPX volatility is higher, but vol-of-vol
+            stress may be more controlled.
+            - **VIX contained, VVIX up:** spot VIX is not extreme, but the options market
+            may be paying for convexity or future volatility uncertainty.
+            - **VIX contained, VVIX contained:** volatility markets look calmer from both
+            the SPX implied-vol and vol-of-vol perspective.
             """
         )
 
