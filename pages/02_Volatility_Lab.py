@@ -2,9 +2,11 @@
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 
 from src.volatility import calculate_realized_volatility
+from src.data import load_spx_vix_vvix_data
 
 def subtle_divider() -> None:
     """Render a faint Bloomberg-style divider line."""
@@ -110,6 +112,635 @@ with concept_cols[2]:
         option sellers usually require compensation for bearing volatility and tail risk.
         """
     )
+
+st.divider()
+
+st.subheader("SPX / VIX / VVIX Market Snapshot")
+
+st.markdown(
+    """
+    This section displays the latest available SPX, VIX, and VVIX market snapshot from the real-data feed.
+    
+    **SPX** represents the underlying index movement, **VIX** represents the
+    market's implied-volatility benchmark for SPX, and **VVIX** represents
+    volatility-of-volatility context.
+    """
+)
+
+try:
+    market_data = load_spx_vix_vvix_data(period="1y")
+
+    latest_row = market_data.iloc[-1]
+    previous_row = market_data.iloc[-2]
+
+    latest_date = market_data.index[-1]
+    start_date = market_data.index[0]
+
+    spx_latest_return = (
+        latest_row["spx_close"] / previous_row["spx_close"] - 1
+    )
+    vix_latest_change = latest_row["vix_close"] - previous_row["vix_close"]
+    vvix_latest_change = latest_row["vvix_close"] - previous_row["vvix_close"]
+
+    spx_prices = market_data["spx_close"]
+
+    with st.expander("How to read the SPX / VIX / VVIX snapshot"):
+        st.markdown(
+            """
+            **SPX Close** is the latest available closing level of the S&P 500 index.
+            The daily change shown underneath is the latest close-to-close SPX return.
+
+            **VIX Close** is the market's implied-volatility benchmark for SPX.
+            A VIX level of 16 means the market is pricing roughly **16% annualized
+            implied volatility** for forward SPX movement.
+
+            **VVIX Close** measures implied volatility on VIX options. In simple terms,
+            it is a market gauge of **volatility-of-volatility**. A rising VVIX can
+            suggest that the market is becoming more uncertain about volatility itself,
+            not just about the level of SPX.
+
+            Desk framing:
+
+            - **SPX** tells us what the index is doing.
+            - **VIX** tells us what the options market is implying about future SPX volatility.
+            - **VVIX** gives context on whether the volatility market itself is becoming more unstable.
+            """
+        )
+
+    realized_vol_windows = {
+        "5d": 5,
+        "10d": 10,
+        "20d": 20,
+        "60d": 60,
+    }
+
+    latest_realized_vols = {}
+
+    for label, window_size in realized_vol_windows.items():
+        realized_vol_series = calculate_realized_volatility(
+            prices=spx_prices,
+            window=window_size,
+            annualization_factor=252,
+        )
+
+        latest_realized_vols[label] = realized_vol_series.dropna().iloc[-1]
+
+    vix_implied_vol = latest_row["vix_close"] / 100
+
+    vix_realized_comparisons = {}
+
+    for label, realized_vol_value in latest_realized_vols.items():
+        spread = vix_implied_vol - realized_vol_value
+        ratio = vix_implied_vol / realized_vol_value
+
+        vix_realized_comparisons[label] = {
+            "realized_vol": realized_vol_value,
+            "spread": spread,
+            "ratio": ratio,
+        }
+    
+    short_realized_vol = latest_realized_vols["5d"]
+    medium_realized_vol = latest_realized_vols["20d"]
+    longer_realized_vol = latest_realized_vols["60d"]
+
+    if short_realized_vol > medium_realized_vol and medium_realized_vol > longer_realized_vol:
+        realized_vol_read = (
+            "SPX realized volatility is accelerating across the curve, with short-term "
+            "realized volatility above both the 20-day and 60-day baselines."
+        )
+        realized_vol_regime = "Accelerating realized volatility"
+
+    elif short_realized_vol < medium_realized_vol and medium_realized_vol < longer_realized_vol:
+        realized_vol_read = (
+            "SPX realized volatility is calming, with short-term realized volatility "
+            "below the 20-day and 60-day baselines."
+        )
+        realized_vol_regime = "Cooling realized volatility"
+
+    elif short_realized_vol > medium_realized_vol:
+        realized_vol_read = (
+            "Short-term SPX realized volatility is running above the 20-day baseline, "
+            "suggesting recent index movement has picked up."
+        )
+        realized_vol_regime = "Short-term realized vol pickup"
+
+    else:
+        realized_vol_read = (
+            "Short-term SPX realized volatility is not materially above the 20-day "
+            "baseline, suggesting recent index movement is relatively contained."
+        )
+        realized_vol_regime = "Contained short-term realized volatility"
+
+
+    vix_20d_ratio = vix_realized_comparisons["20d"]["ratio"]
+    vix_20d_spread = vix_realized_comparisons["20d"]["spread"]
+
+    if vix_20d_ratio >= 1.50:
+        implied_vol_read = (
+            "VIX is trading at an elevated premium to SPX 20-day realized volatility. "
+            "The market is pricing meaningfully more forward volatility than SPX has "
+            "recently delivered."
+        )
+        implied_vol_regime = "Elevated implied-vol premium"
+
+    elif vix_20d_ratio >= 1.15:
+        implied_vol_read = (
+            "VIX is trading at a moderate premium to SPX 20-day realized volatility. "
+            "This suggests the market is pricing some forward uncertainty, protection "
+            "demand, or volatility risk premium."
+        )
+        implied_vol_regime = "Moderate implied-vol premium"
+
+    elif vix_20d_ratio >= 0.95:
+        implied_vol_read = (
+            "VIX is trading close to SPX 20-day realized volatility. Implied volatility "
+            "is broadly in line with the recent realized movement baseline."
+        )
+        implied_vol_regime = "Implied near realized"
+
+    else:
+        implied_vol_read = (
+            "VIX is trading below SPX 20-day realized volatility. Recent SPX movement "
+            "has been running ahead of what the implied-volatility benchmark is pricing."
+        )
+        implied_vol_regime = "Realized vol above implied"
+
+
+    vvix_level = latest_row["vvix_close"]
+
+    if vvix_level >= 120:
+        vvix_read = (
+            "VVIX is elevated, suggesting the volatility market itself is pricing "
+            "higher uncertainty around volatility outcomes."
+        )
+        vvix_regime = "Elevated vol-of-vol"
+
+    elif vvix_level >= 95:
+        vvix_read = (
+            "VVIX is moderately elevated, suggesting some demand for volatility convexity "
+            "or uncertainty around the VIX path."
+        )
+        vvix_regime = "Moderate vol-of-vol"
+
+    else:
+        vvix_read = (
+            "VVIX is relatively contained, suggesting volatility-of-volatility is not "
+            "showing acute stress."
+        )
+        vvix_regime = "Contained vol-of-vol"
+        def classify_implied_vs_realized(spread: float, ratio: float) -> tuple[str, str]:
+            """Classify VIX richness/cheapness versus realized volatility."""
+
+            if ratio >= 1.50:
+                return "Elevated Premium", "rgba(140, 70, 20, 0.45)"
+
+            if ratio >= 1.15:
+                return "Moderate Premium", "rgba(120, 110, 35, 0.38)"
+
+            if ratio >= 0.95:
+                return "Near Realized", "rgba(80, 80, 80, 0.42)"
+
+            return "Realized > Implied", "rgba(120, 35, 35, 0.45)"
+
+    realized_vol_chart_data = pd.DataFrame(
+        {
+            "SPX": market_data["spx_close"],
+            "VIX Implied Vol": market_data["vix_close"] / 100,
+            "SPX 5d Realized Vol": calculate_realized_volatility(
+                prices=spx_prices,
+                window=5,
+                annualization_factor=252,
+            ),
+            "SPX 10d Realized Vol": calculate_realized_volatility(
+                prices=spx_prices,
+                window=10,
+                annualization_factor=252,
+            ),
+            "SPX 20d Realized Vol": calculate_realized_volatility(
+                prices=spx_prices,
+                window=20,
+                annualization_factor=252,
+            ),
+            "SPX 60d Realized Vol": calculate_realized_volatility(
+                prices=spx_prices,
+                window=60,
+                annualization_factor=252,
+            ),
+        }
+    ).dropna()
+
+    metric_cols = st.columns(3)
+
+    with metric_cols[0]:
+        st.metric(
+            "SPX Close",
+            f"{latest_row['spx_close']:,.2f}",
+            f"{spx_latest_return:.2%}",
+        )
+
+    with metric_cols[1]:
+        st.metric(
+            "VIX Close",
+            f"{latest_row['vix_close']:.2f}",
+            f"{vix_latest_change:+.2f} pts",
+        )
+
+    with metric_cols[2]:
+        st.metric(
+            "VVIX Close",
+            f"{latest_row['vvix_close']:.2f}",
+            f"{vvix_latest_change:+.2f} pts",
+        )
+
+    st.markdown("#### SPX Realized Volatility")
+
+    realized_vol_cols = st.columns(4)
+
+    with realized_vol_cols[0]:
+        st.metric("5d Realized Vol", f"{latest_realized_vols['5d']:.2%}")
+
+    with realized_vol_cols[1]:
+        st.metric("10d Realized Vol", f"{latest_realized_vols['10d']:.2%}")
+
+    with realized_vol_cols[2]:
+        st.metric("20d Realized Vol", f"{latest_realized_vols['20d']:.2%}")
+
+    with realized_vol_cols[3]:
+        st.metric("60d Realized Vol", f"{latest_realized_vols['60d']:.2%}")
+
+    with st.expander("How to read SPX realized volatility"):
+        st.markdown(
+            """
+            **Realized volatility** measures how much SPX actually moved over a
+            historical window. The values shown here are annualized.
+
+            The windows give different views of the market:
+
+            - **5d realized vol**: very recent realized movement.
+            - **10d realized vol**: short-term movement.
+            - **20d realized vol**: roughly one trading month.
+            - **60d realized vol**: medium-term realized-volatility regime.
+
+            Desk framing:
+
+            If 5d and 10d realized volatility are above 20d and 60d realized
+            volatility, SPX realized volatility may be **accelerating**.
+
+            If 5d and 10d realized volatility are below 20d and 60d realized
+            volatility, SPX realized volatility may be **calming down**.
+
+            This matters because option P&L depends not only on where implied
+            volatility is priced, but also on how much the underlying actually moves.
+            """
+        )
+
+    st.markdown("#### Implied vs Realized Volatility")
+
+    #st.metric("VIX Implied Vol", f"{vix_implied_vol:.2%}")
+
+    comparison_cols = st.columns(4)
+
+    for column, label in zip(
+        comparison_cols,
+        ["5d", "10d", "20d", "60d"],
+    ):
+        comparison = vix_realized_comparisons[label]
+        regime_label, background_color = classify_implied_vs_realized(
+            spread=comparison["spread"],
+            ratio=comparison["ratio"],
+        )
+
+        with column:
+            st.markdown(
+                f"""
+                <div style="
+                    background: {background_color};
+                    border: 1px solid rgba(220, 220, 220, 0.18);
+                    border-radius: 10px;
+                    padding: 0.85rem;
+                    min-height: 150px;
+                ">
+                    <div style="font-size: 0.85rem; color: #cfcfcf;">
+                        VIX vs SPX {label} Realized
+                    </div>
+                    <div style="font-size: 1.45rem; font-weight: 700; margin-top: 0.25rem;">
+                        {comparison["spread"]:.2%}
+                    </div>
+                    <div style="font-size: 0.85rem; color: #d8d8d8; margin-top: 0.25rem;">
+                        Ratio: {comparison["ratio"]:.2f}x
+                    </div>
+                    <div style="font-size: 0.80rem; color: #f0f0f0; margin-top: 0.60rem;">
+                        {regime_label}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    
+    with st.expander("How to read VIX vs SPX realized volatility"):
+        st.markdown(
+                """
+                This section compares **VIX implied volatility** against SPX realized
+                volatility across several lookback windows.
+
+                **VIX - SPX Realized Vol** measures the spread between implied volatility
+                and realized volatility.
+
+                Example:
+
+                If VIX is 16% and SPX 20d realized volatility is 11%, then:
+
+                ```text
+                VIX - SPX 20d realized = +5%
+                VIX / SPX 20d realized = 1.45x
+                ```
+
+                That means the options market is pricing more forward volatility than
+                SPX has recently delivered.
+
+                Desk framing:
+
+                - **VIX above realized vol** may suggest volatility risk premium,
+                protection demand, event risk, or uncertainty.
+                - **VIX near realized vol** suggests implied volatility is close to the
+                recent movement baseline.
+                - **VIX below realized vol** suggests SPX has recently moved more than
+                the implied-volatility benchmark is pricing.
+
+                The comparison across windows matters:
+
+                - Rich versus **5d/10d** but not **60d** can mean recent realized movement
+                is calm, but the broader vol regime still carries uncertainty.
+                - Rich versus **all windows** can suggest the market is pricing protection
+                or event risk beyond what SPX has recently delivered.
+                - Cheap versus **short windows** can suggest realized movement is outrunning
+                implied volatility.
+                """
+            )
+    st.markdown("#### SPX / VIX Desk Read")
+
+    st.markdown(
+        f"""
+        <div style="
+            background: rgba(35, 35, 35, 0.72);
+            border: 1px solid rgba(220, 220, 220, 0.18);
+            border-radius: 12px;
+            padding: 1rem 1.1rem;
+            margin-top: 0.5rem;
+            margin-bottom: 0.75rem;
+        ">
+            <div style="font-size: 0.90rem; color: #cfcfcf; margin-bottom: 0.35rem;">
+                Current Regime Summary
+            </div>
+            <div style="font-size: 1.05rem; font-weight: 700; margin-bottom: 0.70rem;">
+                {realized_vol_regime} | {implied_vol_regime} | {vvix_regime}
+            </div>
+            <div style="font-size: 0.92rem; line-height: 1.55; color: #eeeeee;">
+                <strong>Realized vol read:</strong> {realized_vol_read}<br><br>
+                <strong>Implied vol read:</strong> {implied_vol_read}<br><br>
+                <strong>VVIX read:</strong> {vvix_read}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.expander("Desk so what"):
+        st.markdown(
+            f"""
+            This read connects SPX realized volatility, VIX implied volatility, and
+            VVIX volatility-of-volatility into one desk-style interpretation.
+
+            **Current setup:**
+
+            - SPX 5d realized vol: **{latest_realized_vols["5d"]:.2%}**
+            - SPX 20d realized vol: **{latest_realized_vols["20d"]:.2%}**
+            - SPX 60d realized vol: **{latest_realized_vols["60d"]:.2%}**
+            - VIX implied vol: **{vix_implied_vol:.2%}**
+            - VIX minus SPX 20d realized: **{vix_20d_spread:.2%}**
+            - VIX / SPX 20d realized: **{vix_20d_ratio:.2f}x**
+            - VVIX level: **{vvix_level:.2f}**
+
+            For an SPX/VIX/index-options flow desk, the key question is whether
+            realized SPX movement is strong enough to justify the implied-volatility
+            premium, and whether VVIX is signaling instability in the volatility
+            market itself.
+
+            If implied volatility remains above realized volatility while SPX movement
+            stays contained, short-vol carry may look attractive but remains exposed
+            to event risk and volatility spikes. If realized volatility accelerates
+            and VVIX rises, the desk may focus more on convexity demand, hedging
+            pressure, and risk to short-gamma or short-vol positions.
+            """
+        )
+    
+    st.markdown("#### SPX / VIX Volatility Regimes")
+
+    vol_regime_fig = make_subplots(
+        rows=2,
+        cols=2,
+        shared_xaxes=True,
+        vertical_spacing=0.12,
+        horizontal_spacing=0.08,
+        specs=[
+            [{"secondary_y": True}, {"secondary_y": True}],
+            [{"secondary_y": True}, {"secondary_y": True}],
+        ],
+        subplot_titles=[
+            "VIX vs SPX 5d Realized Vol",
+            "VIX vs SPX 10d Realized Vol",
+            "VIX vs SPX 20d Realized Vol",
+            "VIX vs SPX 60d Realized Vol",
+        ],
+    )
+
+    chart_windows = [
+        ("5d", "SPX 5d Realized Vol", 1, 1),
+        ("10d", "SPX 10d Realized Vol", 1, 2),
+        ("20d", "SPX 20d Realized Vol", 2, 1),
+        ("60d", "SPX 60d Realized Vol", 2, 2),
+    ]
+
+    for label, realized_column, row, col in chart_windows:
+        vol_regime_fig.add_trace(
+            go.Scatter(
+                x=realized_vol_chart_data.index,
+                y=realized_vol_chart_data["VIX Implied Vol"],
+                mode="lines",
+                name="VIX Implied Vol",
+                legendgroup="VIX",
+                showlegend=(label == "5d"),
+                line=dict(color="#f5b041", width=2.2),
+                hovertemplate="Date: %{x}<br>VIX Implied Vol: %{y:.2%}<extra></extra>",
+            ),
+            row=row,
+            col=col,
+            secondary_y=False,
+        )
+
+        vol_regime_fig.add_trace(
+            go.Scatter(
+                x=realized_vol_chart_data.index,
+                y=realized_vol_chart_data[realized_column],
+                mode="lines",
+                name=realized_column,
+                legendgroup=realized_column,
+                showlegend=True,
+                line=dict(color="#5dade2", width=1.9),
+                hovertemplate=(
+                    f"Date: %{{x}}<br>{realized_column}: %{{y:.2%}}<extra></extra>"
+                ),
+            ),
+            row=row,
+            col=col,
+            secondary_y=False,
+        )
+
+        vol_regime_fig.add_trace(
+            go.Scatter(
+                x=realized_vol_chart_data.index,
+                y=realized_vol_chart_data["SPX"],
+                mode="lines",
+                name="SPX Index Level",
+                legendgroup="SPX",
+                showlegend=(label == "5d"),
+                yaxis="y2",
+                line=dict(color="rgba(220, 220, 220, 0.22)", width=1.1),
+                hovertemplate="Date: %{x}<br>SPX: %{y:,.2f}<extra></extra>",
+            ),
+            row=row,
+            col=col,
+            secondary_y=True,
+        )
+
+    vol_regime_fig.update_layout(
+        title=dict(
+            text="VIX Implied Vol, SPX Realized Volatility Windows, and SPX Index Level",
+            x=0.01,
+            xanchor="left",
+            font=dict(size=18, color="#f5f5f5"),
+        ),
+        template="plotly_dark",
+        height=600,
+        margin=dict(l=40, r=50, t=75, b=40),
+        paper_bgcolor="#111111",
+        plot_bgcolor="#111111",
+        showlegend=False,
+        hovermode="x unified",
+    )
+
+    for row in [1, 2]:
+        for col in [1, 2]:
+            vol_regime_fig.update_xaxes(
+                gridcolor="rgba(180, 180, 180, 0.18)",
+                zeroline=False,
+                row=row,
+                col=col,
+            )
+
+            vol_regime_fig.update_yaxes(
+                title_text=None,
+                tickformat=".0%",
+                gridcolor="rgba(180, 180, 180, 0.18)",
+                zeroline=False,
+                row=row,
+                col=col,
+                secondary_y=False,
+            )
+
+            vol_regime_fig.update_yaxes(
+                title_text=None,
+                showgrid=False,
+                zeroline=False,
+                color="rgba(220, 220, 220, 0.45)",
+                row=row,
+                col=col,
+                secondary_y=True,
+            )
+
+    st.plotly_chart(vol_regime_fig, use_container_width=True)
+
+    with st.expander("Desk so what: SPX / VIX volatility regime chart pack"):
+        st.markdown(
+            f"""
+            This chart pack compares **VIX implied volatility** against multiple
+            SPX realized-volatility windows, while keeping the SPX index level in
+            the background for price-path context.
+
+            Each panel asks a slightly different desk question:
+
+            - **VIX vs 5d realized vol:** Is implied volatility high or low versus
+            the very recent SPX movement?
+            - **VIX vs 10d realized vol:** Is implied volatility high or low versus
+            short-term realized movement?
+            - **VIX vs 20d realized vol:** Is implied volatility high or low versus
+            the standard one-month realized-volatility baseline?
+            - **VIX vs 60d realized vol:** Is implied volatility high or low versus
+            the broader realized-volatility regime?
+
+            **Current read:**
+
+            - VIX implied vol: **{vix_implied_vol:.2%}**
+            - SPX 5d realized vol: **{latest_realized_vols["5d"]:.2%}**
+            - SPX 10d realized vol: **{latest_realized_vols["10d"]:.2%}**
+            - SPX 20d realized vol: **{latest_realized_vols["20d"]:.2%}**
+            - SPX 60d realized vol: **{latest_realized_vols["60d"]:.2%}**
+
+            **Desk interpretation:**
+
+            A desk is not just asking whether VIX is above or below one realized-vol
+            number. It is asking **which realized-volatility baseline VIX is rich or
+            cheap against**.
+
+            If VIX is above the 5d and 10d realized-volatility windows, but closer to
+            the 20d or 60d windows, recent SPX movement may have calmed even though
+            the market is still carrying broader volatility premium.
+
+            If VIX is above all four realized-volatility windows, the market may be
+            pricing protection demand, event risk, or volatility risk premium beyond
+            what SPX has recently delivered.
+
+            If short-window realized volatility is above VIX, recent SPX movement is
+            outrunning the implied-volatility benchmark. That can matter for desks
+            exposed to short gamma, short volatility, or hedging flows that become
+            more sensitive when realized movement picks up.
+
+            The faint SPX line helps connect volatility behavior to the underlying
+            index path. Sharp drawdowns, reversals, or unstable rallies can explain
+            why VIX and short-window realized volatility move differently.
+            """
+        )    
+    st.caption(
+        """
+        **How to read Implied vs Realized**
+
+        This row compares what SPX has recently **realized** against what the
+        volatility market is **implying** through VIX. Is the options market 
+        pricing more movement than SPX has actually been realizing?
+
+        - **VIX - SPX 20d Realized** measures the spread between implied volatility
+        and recent realized volatility.
+        - **VIX / SPX 20d Realized** shows how large implied volatility is relative
+        to the recent realized-volatility baseline.
+
+        A positive implied-vs-realized spread means VIX is pricing more forward
+        volatility than SPX has recently delivered. This may reflect volatility risk
+        premium, protection demand, event risk, or uncertainty around future index
+        movement.
+        """
+    )
+
+    subtle_divider()
+
+    st.caption(
+        f"Latest available market data as of {latest_date.date()} "
+        f"| 1-year history loaded for volatility calculations "
+        f"| Source: Yahoo Finance via yfinance"
+    )
+
+except Exception as error:
+    st.error("Unable to load SPX / VIX / VVIX market data.")
+    st.caption(f"Data error: {error}")
 
 st.divider()
 
